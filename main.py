@@ -4,20 +4,19 @@ from dev.exacta import exacta
 from dev.casos.caso1 import caso1
 from dev.casos.caso2 import caso2
 from dev.casos.caso3 import caso3, caso3_algebraico
+from dev.parsear_edo import parsear_edo
 
 def main():
     x, y = symbols('x y', real=True)
 
     # Solicitar al usuario la ecuación diferencial
-    print("Ingrese la EDO de la forma M(x,y) dx + N(x,y) dy = 0")
-    M_input = input("Ingrese M(x, y): ")
-    N_input = input("Ingrese N(x, y): ")
+    print("Ingrese la EDO completa (por ejemplo: 2*x*y dx + x**2 dy = 0):")
+    entrada = input("EDO: ")
 
     try:
-        M = sp.sympify(M_input)
-        N = sp.sympify(N_input)
+        M, N = parsear_edo(entrada)
     except Exception as e:
-        print(f"Error al interpretar las expresiones: {e}")
+        print(f"Error al interpretar la ecuación: {e}")
         return
 
     print("\nVerificando si la ecuación es exacta...")
