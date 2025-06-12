@@ -16,7 +16,7 @@ def latex_to_sympy(latex_str: str) -> str:
         return ""
     if not isinstance(latex_str, str):
         return str(latex_str)
-    
+
     result = latex_str.strip()
     print(f"[DEBUG] Input: {result}")
 
@@ -32,7 +32,7 @@ def latex_to_sympy(latex_str: str) -> str:
     # Convertir funciones LaTeX a SymPy antes de procesar multiplicación
     function_replacements = {
         r'\\sin\s*\(([^)]+)\)': r'sin(\1)',
-        r'\\cos\s*\(([^)]+)\)': r'cos(\1)', 
+        r'\\cos\s*\(([^)]+)\)': r'cos(\1)',
         r'\\tan\s*\(([^)]+)\)': r'tan(\1)',
         r'\\sin\s*([a-zA-Z])': r'sin(\1)',
         r'\\cos\s*([a-zA-Z])': r'cos(\1)',
@@ -42,13 +42,13 @@ def latex_to_sympy(latex_str: str) -> str:
         r'\\exp\s*\(([^)]+)\)': r'exp(\1)',
         r'\\sqrt\s*\{([^}]+)\}': r'sqrt(\1)',
     }
-    
+
     for pattern, replacement in function_replacements.items():
         result = re.sub(pattern, replacement, result)
-    
+
     # Reemplazos directos
     replacements = {
-        '\\sin': 'sin', '\\cos': 'cos', '\\tan': 'tan', '\\cot': 'cot', 
+        '\\sin': 'sin', '\\cos': 'cos', '\\tan': 'tan', '\\cot': 'cot',
         '\\sec': 'sec', '\\csc': 'csc',
         '\\arcsin': 'asin', '\\arccos': 'acos', '\\arctan': 'atan',
         '\\sinh': 'sinh', '\\cosh': 'cosh', '\\tanh': 'tanh',
@@ -61,7 +61,7 @@ def latex_to_sympy(latex_str: str) -> str:
         result = result.replace(old, new)
 
     print(f"[DEBUG] After function replacements: {result}")
-    
+
     # Paso 3: Manejo de potencias (antes de multiplicación implícita)
     print(f"[DEBUG] Before power processing: {result}")
 
@@ -85,61 +85,64 @@ def latex_to_sympy(latex_str: str) -> str:
     # c) Cualquier resto de '^' sin capturar potencias (por seguridad)
     result = result.replace('^', '**')
 
-    
+
     print(f"[DEBUG] After power processing: {result}")
-    
+
     # Paso 4: Manejar fracciones
     result = re.sub(r'\\frac{([^{}]+)}{([^{}]+)}', r'(\1)/(\2)', result)
-    
+
     # Paso 5: Proteger dx y dy
     result = re.sub(r'\bdx\b', ' __DX__ ', result)
     result = re.sub(r'\bdy\b', ' __DY__ ', result)
-    
+
     print(f"[DEBUG] After dx/dy protection: {result}")
-    
+
     # Paso 6: Multiplicación implícita mejorada (DESPUÉS de potencias)
     result = re.sub(r'\s+', ' ', result).strip()
-    
+
     print(f"[DEBUG] Before implicit multiplication: {result}")
-    
-    # IMPORTANTE: NO procesar multiplicación si ya hay ** (potencias)
-    # Número seguido de variable (pero NO si hay ** en el medio)
-    result = re.sub(r'(\d+)\s+([a-zA-Z])', r'\1*\2', result)
-    
-    # Variable seguida de paréntesis (sin espacios para evitar conflictos)
-    result = re.sub(r'([a-zA-Z])\(', r'\1*(', result)
-    
-    # Paréntesis cerrado seguido de variable
-    result = re.sub(r'\)\s*([a-zA-Z])', r')*\1', result)
-    
-    # Paréntesis cerrado seguido de paréntesis abierto
-    result = re.sub(r'\)\s*\(', r')*(', result)
-    
-    # Número seguido de paréntesis
+
+    # Reglas en orden de precedencia y especificidad
+    # 1. Función seguida de función (e.g., sin(x)cos(y))
+    result = re.sub(r'(sin|cos|tan|log|exp|sqrt)\(([^)]+)\)\s*(sin|cos|tan|log|exp|sqrt)', r'\1(\2)*\3', result)
+
+    # 2. Variable seguida de función (e.g., xsin(y))
+    result = re.sub(r'([a-zA-Z])\s*(sin|cos|tan|log|exp|sqrt)\(([^)]+)\)', r'\1*\2(\3)', result)
+
+    # 3. Función seguida de variable (e.g., sin(x)y)
+    result = re.sub(r'(sin|cos|tan|log|exp|sqrt)\(([^)]+)\)\s*([a-zA-Z])', r'\1(\2)*\3', result)
+
+    # 4. Número seguido de variable (e.g., 2x)
+    result = re.sub(r'(\d+)([a-zA-Z])', r'\1*\2', result)
+
+    # 5. Número seguido de paréntesis (e.g., 2(x+y))
     result = re.sub(r'(\d+)\s*\(', r'\1*(', result)
-    
-    # Casos especiales para funciones trigonométricas
-    # xsin(y) -> x*sin(y) (pero NO x**sin)
-    result = re.sub(r'([a-zA-Z])(?!\*\*)([a-zA-Z]+\()', r'\1*\2', result)
-    
-    # sin(x)cos(y) -> sin(x)*cos(y)
-    result = re.sub(r'(sin|cos|tan|log|exp)\(([^)]+)\)\s*(sin|cos|tan|log|exp)', r'\1(\2)*\3', result)
-    
-    # sin(x)y -> sin(x)*y (pero NO sin(x)**y)
-    result = re.sub(r'(sin|cos|tan|log|exp)\(([^)]+)\)(?!\*\*)([a-zA-Z])', r'\1(\2)*\3', result)
-    
+
+    # 6. Paréntesis cerrado seguido de variable (e.g., (x+y)z)
+    result = re.sub(r'\)\s*([a-zA-Z])', r')*\1', result)
+
+    # 7. Paréntesis cerrado seguido de paréntesis abierto (e.g., (x+y)(a+b))
+    result = re.sub(r'\)\s*\(', r')*(', result)
+
+    # 8. Variable seguida de paréntesis (e.g., x(y+z)), solo si no es un nombre de función ya reconocido
+    # Usamos una función de reemplazo para evitar falsos positivos con nombres de funciones
+    result = re.sub(
+        r'([a-zA-Z_][a-zA-Z0-9_]*)\s*\(',
+        lambda m: m.group(1) + '*(' if m.group(1) not in ['sin', 'cos', 'tan', 'log', 'exp', 'sqrt'] else m.group(0),
+        result
+    )
+
     print(f"[DEBUG] After implicit multiplication: {result}")
-    
+
     # Paso 7: Restaurar dx y dy
     result = result.replace('__DX__', 'dx')
     result = result.replace('__DY__', 'dy')
-    
-    # Paso 8: Limpiar multiplicaciones dobles
-    # result = re.sub(r'\*+', '*', result) # Eliminado para evitar que x**2 se convierta en x*2
-    
+
+    # Paso 8: Limpiar multiplicaciones dobles (solo si no forman parte de potencias)
+    result = re.sub(r'\*{2,}', '**', result) # Conservar ** para potencias
+
     print(f"[DEBUG] Final result: {result}")
     return result
-
 def parse_differential_equation_from_full_string(equation_str: str) -> tuple[str, str]:
     """
     Parser mejorado para ecuaciones diferenciales.
