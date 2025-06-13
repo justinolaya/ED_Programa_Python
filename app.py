@@ -3,16 +3,13 @@ import sympy as sp
 from st_mathlive import mathfield
 import re
 import unicodedata
-from equation_solver import solve_exact_differential_equation # Importar la función desde equation_solver
+from equation_solver import solve_exact_differential_equation
 
 # Definir símbolos globalmente para SymPy
 x, y = sp.symbols('x y')
 
 def latex_to_sympy(latex_str: str) -> str:
-    """
-    Convierte una cadena LaTeX a una cadena compatible con SymPy.
-    Versión corregida con mejor manejo de funciones y multiplicación.
-    """
+    """Convierte una cadena LaTeX a una cadena compatible con SymPy."""
     if latex_str is None:
         return ""
     if not isinstance(latex_str, str):
@@ -22,15 +19,48 @@ def latex_to_sympy(latex_str: str) -> str:
     print(f"[DEBUG] Input: {result}")
 
     # Paso 1: Normalización de Unicode y limpieza inicial
-    result = unicodedata.normalize('NFKD', result).encode('ascii', 'ignore').decode('utf-8')
-
-    # Eliminar \left, \right, y comandos \mathrm/\text
-    result = re.sub(r'\\left|\\right', '', result)
-    result = re.sub(r'\\(?:mathrm|text[a-zA-Z]*|textbf|text){([^}]+)}', r'\1', result)
+    result = normalize_unicode(result)
+    result = remove_latex_commands(result)
     result = re.sub(r'{}', '', result)
 
-    # Paso 2: Manejar funciones trigonométricas PRIMERO
-    # Convertir funciones LaTeX a SymPy antes de procesar multiplicación
+    # Paso 2: Manejar funciones trigonométricas
+    result = process_trigonometric_functions(result)
+    print(f"[DEBUG] After function replacements: {result}")
+
+    # Paso 3: Manejo de potencias
+    print(f"[DEBUG] Before power processing: {result}")
+    result = process_powers(result)
+    print(f"[DEBUG] After power processing: {result}")
+
+    # Paso 4: Manejar fracciones
+    result = process_fractions(result)
+
+    # Paso 5: Proteger dx y dy
+    result = protect_dx_dy(result)
+    print(f"[DEBUG] After dx/dy protection: {result}")
+
+    # Paso 6: Multiplicación implícita
+    print(f"[DEBUG] Before implicit multiplication: {result}")
+    result = process_implicit_multiplication(result)
+    print(f"[DEBUG] After implicit multiplication: {result}")
+
+    # Paso 8: Limpiar multiplicaciones dobles
+    result = re.sub(r'\*{2,}', '**', result)
+    print(f"[DEBUG] Final result from latex_to_sympy: {result}")
+    return result
+
+def normalize_unicode(text: str) -> str:
+    """Normaliza el texto Unicode a ASCII."""
+    return unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8')
+
+def remove_latex_commands(text: str) -> str:
+    """Elimina comandos LaTeX innecesarios."""
+    text = re.sub(r'\\left|\\right', '', text)
+    text = re.sub(r'\\(?:mathrm|text[a-zA-Z]*|textbf|text){([^}]+)}', r'\1', text)
+    return text
+
+def process_trigonometric_functions(text: str) -> str:
+    """Procesa funciones trigonométricas en formato LaTeX."""
     function_replacements = {
         r'\\sin\s*\(([^)]+)\)': r'sin(\1)',
         r'\\cos\s*\(([^)]+)\)': r'cos(\1)',
@@ -43,246 +73,162 @@ def latex_to_sympy(latex_str: str) -> str:
         r'\\exp\s*\(([^)]+)\)': r'exp(\1)',
         r'\\sqrt\s*\{([^}]+)\}': r'sqrt(\1)',
     }
-
     for pattern, replacement in function_replacements.items():
-        result = re.sub(pattern, replacement, result)
+        text = re.sub(pattern, replacement, text)
+    return text
 
-    # Reemplazos directos
-    replacements = {
-        '\\sin': 'sin', '\\cos': 'cos', '\\tan': 'tan', '\\cot': 'cot',
-        '\\sec': 'sec', '\\csc': 'csc',
-        '\\arcsin': 'asin', '\\arccos': 'acos', '\\arctan': 'atan',
-        '\\sinh': 'sinh', '\\cosh': 'cosh', '\\tanh': 'tanh',
-        '\\exp': 'exp', '\\ln': 'log', '\\log': 'log',
-        '\\pi': 'pi', '\\infty': 'oo',
-        'sen': 'sin',  # Para español
-        '\\cdot': '*', '\\times': '*'
-    }
-    for old, new in replacements.items():
-        result = result.replace(old, new)
+def process_powers(text: str) -> str:
+    """Procesa potencias en formato LaTeX."""
+    # Potencias con llaves
+    text = re.sub(r'(\([^\)]+\)|[a-zA-Z0-9]+)\s*\^\s*\{([^}]+)\}', r'\1**(\2)', text)
+    # Potencias sin llaves
+    text = re.sub(r'(\([^\)]+\)|[a-zA-Z0-9]+)\s*\^\s*([a-zA-Z0-9]+)', r'\1**(\2)', text)
+    # Cualquier resto de '^'
+    return text.replace('^', '**')
 
-    print(f"[DEBUG] After function replacements: {result}")
+def process_fractions(text: str) -> str:
+    """Procesa fracciones en formato LaTeX."""
+    return re.sub(r'\\frac{([^{}]+)}{([^{}]+)}', r'(\1)/(\2)', text)
 
-    # Paso 3: Manejo de potencias (antes de multiplicación implícita)
-    print(f"[DEBUG] Before power processing: {result}")
+def protect_dx_dy(text: str) -> str:
+    """Protege dx y dy en la expresión."""
+    text = re.sub(r'\bdx\b', ' __DX__ ', text)
+    text = re.sub(r'\bdy\b', ' __DY__ ', text)
+    return text
 
-    # a) Potencias con llaves, base simple o con paréntesis embebido:
-    #    x^{2+1} -> x**(2+1)
-    #    (x+1)^{y+2} -> (x+1)**(y+2)
-    result = re.sub(
-    r'(\([^\)]+\)|[a-zA-Z0-9]+)\s*\^\s*\{([^}]+)\}',
-    r'\1**(\2)',
-    result
-    )
-
-    # b) Potencias sin llaves, exponente simple:
-    #    x^2 -> x**2, e^x -> e**x
-    result = re.sub(
-    r'(\([^\)]+\)|[a-zA-Z0-9]+)\s*\^\s*([a-zA-Z0-9]+)',
-    r'\1**(\2)',
-    result
-    )
-
-    # c) Cualquier resto de '^' sin capturar potencias (por seguridad)
-    result = result.replace('^', '**')
-
-
-    print(f"[DEBUG] After power processing: {result}")
-
-    # Paso 4: Manejar fracciones
-    result = re.sub(r'\\frac{([^{}]+)}{([^{}]+)}', r'(\1)/(\2)', result)
-
-    # Paso 5: Proteger dx y dy
-    result = re.sub(r'\bdx\b', ' __DX__ ', result)
-    result = re.sub(r'\bdy\b', ' __DY__ ', result)
-
-    print(f"[DEBUG] After dx/dy protection: {result}")
-
-    # Paso 6: Multiplicación implícita mejorada (DESPUÉS de potencias)
-    result = re.sub(r'\s+', ' ', result).strip()
-
-    print(f"[DEBUG] Before implicit multiplication: {result}")
-
-    # Reglas en orden de precedencia y especificidad
-    # 1. Función seguida de función (e.g., sin(x)cos(y))
-    result = re.sub(r'(sin|cos|tan|log|exp|sqrt)\(([^)]+)\)\s*(sin|cos|tan|log|exp|sqrt)', r'\1(\2)*\3', result)
-
-    # 2. Variable seguida de función (e.g., xsin(y))
-    result = re.sub(r'([a-zA-Z])\s*(sin|cos|tan|log|exp|sqrt)\(([^)]+)\)', r'\1*\2(\3)', result)
-
-    # 3. Función seguida de variable (e.g., sin(x)y)
-    result = re.sub(r'(sin|cos|tan|log|exp|sqrt)\(([^)]+)\)\s*([a-zA-Z])', r'\1(\2)*\3', result)
-
-    # 4. Número seguido de variable (e.g., 2x)
-    result = re.sub(r'(\d+)([a-zA-Z])', r'\1*\2', result)
-
-    # 5. Número seguido de paréntesis (e.g., 2(x+y))
-    result = re.sub(r'(\d+)\s*\(', r'\1*(', result)
-
-    # 6. Paréntesis cerrado seguido de variable (e.g., (x+y)z)
-    result = re.sub(r'\)\s*([a-zA-Z])', r')*\1', result)
-
-    # 7. Paréntesis cerrado seguido de paréntesis abierto (e.g., (x+y)(a+b))
-    result = re.sub(r'\)\s*\(', r')*(', result)
-
-    # 8. Variable seguida de paréntesis (e.g., x(y+z)), solo si no es un nombre de función ya reconocido
-    # Usamos una función de reemplazo para evitar falsos positivos con nombres de funciones
-    result = re.sub(
+def process_implicit_multiplication(text: str) -> str:
+    """Procesa multiplicación implícita."""
+    rules = [
+        (r'(sin|cos|tan|log|exp|sqrt)\(([^)]+)\)\s*(sin|cos|tan|log|exp|sqrt)', r'\1(\2)*\3'),
+        (r'([a-zA-Z])\s*(sin|cos|tan|log|exp|sqrt)\(([^)]+)\)', r'\1*\2(\3)'),
+        (r'(sin|cos|tan|log|exp|sqrt)\(([^)]+)\)\s*([a-zA-Z])', r'\1(\2)*\3'),
+        (r'(\d+)([a-zA-Z])', r'\1*\2'),
+        (r'(\d+)\s*\(', r'\1*('),
+        (r'\)\s*([a-zA-Z])', r')*\1'),
+        (r'\)\s*\(', r')*(')
+    ]
+    
+    for pattern, replacement in rules:
+        text = re.sub(pattern, replacement, text)
+    
+    # Manejo especial para variables seguidas de paréntesis
+    text = re.sub(
         r'([a-zA-Z_][a-zA-Z0-9_]*)\s*\(',
         lambda m: m.group(1) + '*(' if m.group(1) not in ['sin', 'cos', 'tan', 'log', 'exp', 'sqrt'] else m.group(0),
-        result
+        text
     )
-
-    print(f"[DEBUG] After implicit multiplication: {result}")
-
-    # Paso 7: Restaurar dx y dy -- ELIMINADO de aquí, se maneja en el parser
-    # result = result.replace('__DX__', 'dx')
-    # result = result.replace('__DY__', 'dy')
-
-    # Paso 8: Limpiar multiplicaciones dobles (solo si no forman parte de potencias)
-    result = re.sub(r'\*{2,}', '**', result) # Conservar ** para potencias
-
-    print(f"[DEBUG] Final result from latex_to_sympy: {result}")
-    return result
+    return text
 
 def parse_differential_equation_from_full_string(equation_str: str) -> tuple[str, str]:
-    """
-    Parsea la cadena de la ecuación diferencial para extraer M(x,y) y N(x,y).
-    Maneja diferentes formatos de ecuaciones diferenciales utilizando SymPy.
-    """
+    """Parsea la cadena de la ecuación diferencial para extraer M(x,y) y N(x,y)."""
     print(f"[DEBUG] Parsing full equation string: {equation_str}")
 
-    # Paso 1: Normalizar la ecuación a la forma LadoIzquierdo = 0
-    # Asegurarse de que __DX__ y __DY__ ya estén presentes desde latex_to_sympy
-    normalized_eq_str = equation_str.strip()
-
-    if '=' in normalized_eq_str:
-        left_side, right_side = normalized_eq_str.split('=', 1)
-        # Aseguramos que el lado derecho se reste correctamente
-        normalized_eq_str = f"({left_side}) - ({right_side})"
-    else:
-        # Si no hay =, asumimos que ya es el lado izquierdo (Mdx + Ndy)
-        normalized_eq_str = f"({normalized_eq_str})"
-    
+    # Paso 1: Normalizar la ecuación
+    normalized_eq_str = normalize_equation(equation_str)
     print(f"[DEBUG] Normalized equation for SymPy parsing: {normalized_eq_str}")
 
-    # Paso 2: Usar símbolos temporales de SymPy para extraer coeficientes
-    # Definir los símbolos temporales para dx y dy
-    _dx_temp, _dy_temp = sp.symbols('__dx_temp__ __dy_temp__')
-    
-    # Reemplazar los marcadores __DX__ y __DY__ con los símbolos temporales de SymPy.
-    # Aseguramos que se interpreten como multiplicación (ej. x * _dx_temp).
-    # Usamos re.sub con una función de reemplazo para añadir el '*' si es necesario.
-
-    # Primero, asegúrate de que haya un '*' antes de __DX__ o __DY__ si hay una variable o número
-    # justo antes. Esto es crucial para la multiplicación implícita que SymPy necesita.
-    temp_expr_str = re.sub(r'([a-zA-Z0-9)])\s*__DX__', r'\1*__dx_temp__', normalized_eq_str)
-    temp_expr_str = re.sub(r'([a-zA-Z0-9)])\s*__DY__', r'\1*__dy_temp__', temp_expr_str)
-
-    # Luego, reemplaza los marcadores remanentes (ej. si el término empieza con __DX__ o después de un operador)
-    temp_expr_str = temp_expr_str.replace('__DX__', str(_dx_temp))
-    temp_expr_str = temp_expr_str.replace('__DY__', str(_dy_temp))
-
-
+    # Paso 2: Preparar expresión para SymPy
+    temp_expr_str = prepare_sympy_expression(normalized_eq_str)
     print(f"[DEBUG] Expression for sympify coefficient extraction: {temp_expr_str}")
     
     try:
-        # Convertir la expresión a un objeto SymPy
-        # Añadimos los símbolos temporales al namespace para sympify
-        sym_expr = sp.sympify(temp_expr_str, locals={'x': x, 'y': y, 
-                                                    'sin': sp.sin, 'cos': sp.cos, 
-                                                    'tan': sp.tan, 'log': sp.log, 
-                                                    'exp': sp.exp, 'pi': sp.pi, 
-                                                    'sqrt': sp.sqrt,
-                                                    str(_dx_temp): _dx_temp,
-                                                    str(_dy_temp): _dy_temp})
+        # Paso 3: Convertir a SymPy y extraer coeficientes
+        sym_expr = convert_to_sympy(temp_expr_str)
         print(f"[DEBUG] Sympified expression: {sym_expr}")
 
-        # Expandir la expresión para asegurar que los coeficientes se extraigan correctamente
         sym_expr = sp.expand(sym_expr)
         print(f"[DEBUG] Expanded expression: {sym_expr}")
 
-        # Extraer los coeficientes de _dx_temp y _dy_temp
-        M_sym = sp.simplify(sym_expr.coeff(_dx_temp, 1))
-        N_sym = sp.simplify(sym_expr.coeff(_dy_temp, 1))
+        M_str, N_str = extract_coefficients(sym_expr)
+        print(f"[DEBUG] Extracted M_str: {M_str}, N_str: {N_str}")
         
-        # Convertir a cadena y asegurar que no haya marcadores temporales o símbolos de SymPy
-        M_str_final = str(M_sym).replace(str(_dx_temp), '').replace(str(_dy_temp), '').strip()
-        N_str_final = str(N_sym).replace(str(_dx_temp), '').replace(str(_dy_temp), '').strip()
-
-        # Manejar el caso de que el coeficiente sea '0' en SymPy
-        if M_sym == 0: M_str_final = '0'
-        if N_sym == 0: N_str_final = '0'
-
-        # Verificar si la ecuación tiene sentido
-        if M_sym == 0 and N_sym == 0 and sym_expr != 0:
-             # Si la expresión completa no es cero, pero los coeficientes son cero,
-             # significa que no se encontraron términos con dx o dy.
-             raise ValueError("La ecuación no parece tener términos dx o dy válidos.")
-
-        print(f"[DEBUG] Extracted M_str: {M_str_final}, N_str: {N_str_final}")
-        
-        return M_str_final, N_str_final
+        return M_str, N_str
 
     except Exception as e:
         print(f"[ERROR] Error in sympify during parse_differential_equation_from_full_string: {e}")
         raise ValueError(f"No se pudo parsear la ecuación diferencial compleja: '{equation_str}'. Error: {e}")
 
+def normalize_equation(equation_str: str) -> str:
+    """Normaliza la ecuación a la forma LadoIzquierdo = 0."""
+    equation_str = equation_str.strip()
+    if '=' in equation_str:
+        left_side, right_side = equation_str.split('=', 1)
+        return f"({left_side}) - ({right_side})"
+    return f"({equation_str})"
 
-def clean_outer_parentheses(expr_str: str) -> str:
-    """
-    Elimina paréntesis externos innecesarios si están balanceados.
-    """
-    expr_str = expr_str.strip()
-    if expr_str.startswith('(') and expr_str.endswith(')'):
-        count = 0
-        for i, char in enumerate(expr_str):
-            if char == '(':
-                count += 1
-            elif char == ')':
-                count -= 1
-            if count == 0 and i < len(expr_str) - 1:
-                return expr_str
-        return expr_str[1:-1]
-    return expr_str
+def prepare_sympy_expression(expr_str: str) -> str:
+    """Prepara la expresión para SymPy."""
+    _dx_temp, _dy_temp = sp.symbols('__dx_temp__ __dy_temp__')
+    
+    # Manejar multiplicación implícita con dx y dy
+    temp_expr_str = re.sub(r'([a-zA-Z0-9)])\s*__DX__', r'\1*__dx_temp__', expr_str)
+    temp_expr_str = re.sub(r'([a-zA-Z0-9)])\s*__DY__', r'\1*__dy_temp__', temp_expr_str)
+    
+    # Reemplazar marcadores restantes
+    temp_expr_str = temp_expr_str.replace('__DX__', str(_dx_temp))
+    temp_expr_str = temp_expr_str.replace('__DY__', str(_dy_temp))
+    
+    return temp_expr_str
 
-def safe_sympify(expr_str: str):
-    """
-    Versión segura de sympify que maneja mejor los errores.
-    """
-    try:
-        # Limpiar la expresión antes de pasarla a sympify
-        cleaned = expr_str.strip()
-        # Asegurar que las funciones estén bien formateadas
-        cleaned = re.sub(r'([a-zA-Z]+)\*\*', r'(\1)**', cleaned)
-        
-        # Convertir usando el namespace local con símbolos definidos
-        return sp.sympify(cleaned, locals={'x': x, 'y': y, 'sin': sp.sin, 'cos': sp.cos, 
-                                          'tan': sp.tan, 'log': sp.log, 'exp': sp.exp, 
-                                          'pi': sp.pi, 'sqrt': sp.sqrt})
-    except Exception as e:
-        print(f"[ERROR] Error in sympify for '{expr_str}': {e}")
-        raise ValueError(f"No se pudo convertir la expresión '{expr_str}' a SymPy: {e}")
+def convert_to_sympy(expr_str: str) -> sp.Expr:
+    """Convierte una expresión a formato SymPy."""
+    return sp.sympify(expr_str, locals={
+        'x': x, 'y': y, 
+        'sin': sp.sin, 'cos': sp.cos, 
+        'tan': sp.tan, 'log': sp.log, 
+        'exp': sp.exp, 'pi': sp.pi, 
+        'sqrt': sp.sqrt
+    })
 
-# Código Streamlit
-st.title("Análisis de Ecuaciones Diferenciales Exactas y Factores Integrantes")
+def extract_coefficients(sym_expr: sp.Expr) -> tuple[str, str]:
+    """Extrae los coeficientes M y N de la expresión SymPy."""
+    _dx_temp, _dy_temp = sp.symbols('__dx_temp__ __dy_temp__')
+    
+    M_sym = sp.simplify(sym_expr.coeff(_dx_temp, 1))
+    N_sym = sp.simplify(sym_expr.coeff(_dy_temp, 1))
+    
+    M_str = str(M_sym).replace(str(_dx_temp), '').replace(str(_dy_temp), '').strip()
+    N_str = str(N_sym).replace(str(_dx_temp), '').replace(str(_dy_temp), '').strip()
+    
+    if M_sym == 0: M_str = '0'
+    if N_sym == 0: N_str = '0'
+    
+    return M_str, N_str
 
-st.markdown("### Introduce la ecuación diferencial completa:")
-full_equation_latex_input, _ = mathfield(
-    value=r"(x^2+x+y)dx+(1-x^2-y)dy=0",
-    key="full_equation_input"
-)
+def display_result_line(line: str):
+    """Muestra una línea de resultado en la interfaz de Streamlit."""
+    if line.startswith("###"):
+        st.markdown(line)
+    elif line.startswith("$") and line.endswith("$"):
+        st.latex(line[1:-1])
+    elif line.startswith("✅"):
+        st.success(line)
+    elif line.startswith("❌"):
+        st.error(line)
+    elif line.startswith("⚠️"):
+        st.warning(line)
+    elif line.startswith("**"):
+        st.markdown(line)
+    else:
+        st.write(line)
 
-if st.button("Procesar"):
+def display_results(results: list):
+    """Muestra los resultados en la interfaz de Streamlit."""
+    for line in results:
+        display_result_line(line)
+
+def process_equation(full_equation_latex_input: str):
+    """Procesa la ecuación ingresada y muestra los resultados."""
     try:
         st.write("**Debug Info:**")
         st.write(f"Input LaTeX: {full_equation_latex_input}")
         
-        full_equation_str_processed = latex_to_sympy(full_equation_latex_input) if full_equation_latex_input else ""
+        # Convertir LaTeX a SymPy
+        full_equation_str_processed = latex_to_sympy(full_equation_latex_input)
         st.write(f"Procesado por latex_to_sympy: `{full_equation_str_processed}`")
         
+        # Parsear la ecuación
         M_str_parsed, N_str_parsed = parse_differential_equation_from_full_string(full_equation_str_processed)
-        
         st.write(f"M parseado: `{M_str_parsed}`")
         st.write(f"N parseado: `{N_str_parsed}`")
         
@@ -291,26 +237,27 @@ if st.button("Procesar"):
         
         st.markdown("---")
         st.markdown("## Solución:")
-        
-        for line in results:
-            if line.startswith("###"):
-                st.markdown(line)
-            elif line.startswith("$") and line.endswith("$"):
-                st.latex(line[1:-1])
-            elif line.startswith("✅"):
-                st.success(line)
-            elif line.startswith("❌"):
-                st.error(line)
-            elif line.startswith("⚠️"):
-                st.warning(line)
-            elif line.startswith("**"):
-                st.markdown(line)
-            else:
-                st.write(line)
-                
+        display_results(results)
+            
     except ValueError as ve:
         st.error(f"Error de formato: {str(ve)}")
     except Exception as e:
         st.error(f"Error inesperado: {str(e)}")
         import traceback
         st.code(traceback.format_exc())
+
+def main():
+    """Función principal de la aplicación."""
+    st.title("Análisis de Ecuaciones Diferenciales Exactas y Factores Integrantes")
+    st.markdown("### Introduce la ecuación diferencial completa:")
+    
+    full_equation_latex_input, _ = mathfield(
+        value=r"(x^2+x+y)dx+(1-x^2-y)dy=0",
+        key="full_equation_input"
+    )
+
+    if st.button("Procesar"):
+        process_equation(full_equation_latex_input)
+
+if __name__ == "__main__":
+    main()
