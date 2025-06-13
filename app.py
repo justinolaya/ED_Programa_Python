@@ -134,88 +134,99 @@ def latex_to_sympy(latex_str: str) -> str:
 
     print(f"[DEBUG] After implicit multiplication: {result}")
 
-    # Paso 7: Restaurar dx y dy
-    result = result.replace('__DX__', 'dx')
-    result = result.replace('__DY__', 'dy')
+    # Paso 7: Restaurar dx y dy -- ELIMINADO de aquí, se maneja en el parser
+    # result = result.replace('__DX__', 'dx')
+    # result = result.replace('__DY__', 'dy')
 
     # Paso 8: Limpiar multiplicaciones dobles (solo si no forman parte de potencias)
     result = re.sub(r'\*{2,}', '**', result) # Conservar ** para potencias
 
-    print(f"[DEBUG] Final result: {result}")
+    print(f"[DEBUG] Final result from latex_to_sympy: {result}")
     return result
+
 def parse_differential_equation_from_full_string(equation_str: str) -> tuple[str, str]:
     """
-    Parser mejorado para ecuaciones diferenciales.
+    Parsea la cadena de la ecuación diferencial para extraer M(x,y) y N(x,y).
+    Maneja diferentes formatos de ecuaciones diferenciales utilizando SymPy.
     """
-    equation_str = equation_str.strip()
-    print(f"[DEBUG] Parsing equation: {equation_str}")
+    print(f"[DEBUG] Parsing full equation string: {equation_str}")
 
-    # Normalizar la ecuación para el parsing
-    temp_equation_str = re.sub(r'\bdx\b', '__DX__', equation_str)
-    temp_equation_str = re.sub(r'\bdy\b', '__DY__', temp_equation_str)
+    # Paso 1: Normalizar la ecuación a la forma LadoIzquierdo = 0
+    # Asegurarse de que __DX__ y __DY__ ya estén presentes desde latex_to_sympy
+    normalized_eq_str = equation_str.strip()
+
+    if '=' in normalized_eq_str:
+        left_side, right_side = normalized_eq_str.split('=', 1)
+        # Aseguramos que el lado derecho se reste correctamente
+        normalized_eq_str = f"({left_side}) - ({right_side})"
+    else:
+        # Si no hay =, asumimos que ya es el lado izquierdo (Mdx + Ndy)
+        normalized_eq_str = f"({normalized_eq_str})"
     
-    print(f"[DEBUG] After dx/dy substitution: {temp_equation_str}")
+    print(f"[DEBUG] Normalized equation for SymPy parsing: {normalized_eq_str}")
 
-    # Patrón 1: (M)dx + (N)dy = 0 o (M)dx - (N)dy = 0
-    pattern1 = r'^(.*?)\s*__DX__\s*([+\-])\s*(.*?)\s*__DY__\s*=\s*0\s*$'
-    match1 = re.match(pattern1, temp_equation_str, re.IGNORECASE)
-    if match1:
-        M_str = match1.group(1).strip()
-        sign = match1.group(2)
-        N_str = match1.group(3).strip()
-        
-        # Manejar coeficientes implícitos de 1
-        if not M_str: M_str = '1'
-        if not N_str: N_str = '1'
-        
-        print(f"[DEBUG] Pattern 1 matched - M: {M_str}, sign: {sign}, N: {N_str}")
-        
-        M_str = clean_outer_parentheses(M_str)
-        N_str = clean_outer_parentheses(N_str)
-        
-        if sign == '-':
-            N_str = f"-({N_str})"
-        
-        return M_str, N_str
+    # Paso 2: Usar símbolos temporales de SymPy para extraer coeficientes
+    # Definir los símbolos temporales para dx y dy
+    _dx_temp, _dy_temp = sp.symbols('__dx_temp__ __dy_temp__')
+    
+    # Reemplazar los marcadores __DX__ y __DY__ con los símbolos temporales de SymPy.
+    # Aseguramos que se interpreten como multiplicación (ej. x * _dx_temp).
+    # Usamos re.sub con una función de reemplazo para añadir el '*' si es necesario.
 
-    # Patrón 2: (M)dx + (N)dy (sin =0)
-    pattern2 = r'^(.*?)\s*__DX__\s*([+\-])\s*(.*?)\s*__DY__\s*$'
-    match2 = re.match(pattern2, temp_equation_str, re.IGNORECASE)
-    if match2:
-        M_str = match2.group(1).strip()
-        sign = match2.group(2)
-        N_str = match2.group(3).strip()
-        
-        # Manejar coeficientes implícitos de 1
-        if not M_str: M_str = '1'
-        if not N_str: N_str = '1'
-        
-        M_str = clean_outer_parentheses(M_str)
-        N_str = clean_outer_parentheses(N_str)
-        
-        if sign == '-':
-            N_str = f"-({N_str})"
-        
-        return M_str, N_str
+    # Primero, asegúrate de que haya un '*' antes de __DX__ o __DY__ si hay una variable o número
+    # justo antes. Esto es crucial para la multiplicación implícita que SymPy necesita.
+    temp_expr_str = re.sub(r'([a-zA-Z0-9)])\s*__DX__', r'\1*__dx_temp__', normalized_eq_str)
+    temp_expr_str = re.sub(r'([a-zA-Z0-9)])\s*__DY__', r'\1*__dy_temp__', temp_expr_str)
 
-    # Patrón 3: Mdx = Ndy
-    pattern3 = r'^(.*?)\s*__DX__\s*=\s*(.*?)\s*__DY__\s*$'
-    match3 = re.match(pattern3, temp_equation_str, re.IGNORECASE)
-    if match3:
-        M_str = match3.group(1).strip()
-        N_str = match3.group(2).strip()
-        
-        # Manejar coeficientes implícitos de 1
-        if not M_str: M_str = '1'
-        if not N_str: N_str = '1'
-        
-        M_str = clean_outer_parentheses(M_str)
-        N_str = clean_outer_parentheses(N_str)
-        
-        return M_str, f"-({N_str})"
+    # Luego, reemplaza los marcadores remanentes (ej. si el término empieza con __DX__ o después de un operador)
+    temp_expr_str = temp_expr_str.replace('__DX__', str(_dx_temp))
+    temp_expr_str = temp_expr_str.replace('__DY__', str(_dy_temp))
 
-    print(f"[DEBUG] No pattern matched for: {temp_equation_str}")
-    raise ValueError(f"No se pudo parsear la ecuación: '{equation_str}'. Formatos soportados: (M)dx + (N)dy = 0, Mdx = Ndy, etc.")
+
+    print(f"[DEBUG] Expression for sympify coefficient extraction: {temp_expr_str}")
+    
+    try:
+        # Convertir la expresión a un objeto SymPy
+        # Añadimos los símbolos temporales al namespace para sympify
+        sym_expr = sp.sympify(temp_expr_str, locals={'x': x, 'y': y, 
+                                                    'sin': sp.sin, 'cos': sp.cos, 
+                                                    'tan': sp.tan, 'log': sp.log, 
+                                                    'exp': sp.exp, 'pi': sp.pi, 
+                                                    'sqrt': sp.sqrt,
+                                                    str(_dx_temp): _dx_temp,
+                                                    str(_dy_temp): _dy_temp})
+        print(f"[DEBUG] Sympified expression: {sym_expr}")
+
+        # Expandir la expresión para asegurar que los coeficientes se extraigan correctamente
+        sym_expr = sp.expand(sym_expr)
+        print(f"[DEBUG] Expanded expression: {sym_expr}")
+
+        # Extraer los coeficientes de _dx_temp y _dy_temp
+        M_sym = sp.simplify(sym_expr.coeff(_dx_temp, 1))
+        N_sym = sp.simplify(sym_expr.coeff(_dy_temp, 1))
+        
+        # Convertir a cadena y asegurar que no haya marcadores temporales o símbolos de SymPy
+        M_str_final = str(M_sym).replace(str(_dx_temp), '').replace(str(_dy_temp), '').strip()
+        N_str_final = str(N_sym).replace(str(_dx_temp), '').replace(str(_dy_temp), '').strip()
+
+        # Manejar el caso de que el coeficiente sea '0' en SymPy
+        if M_sym == 0: M_str_final = '0'
+        if N_sym == 0: N_str_final = '0'
+
+        # Verificar si la ecuación tiene sentido
+        if M_sym == 0 and N_sym == 0 and sym_expr != 0:
+             # Si la expresión completa no es cero, pero los coeficientes son cero,
+             # significa que no se encontraron términos con dx o dy.
+             raise ValueError("La ecuación no parece tener términos dx o dy válidos.")
+
+        print(f"[DEBUG] Extracted M_str: {M_str_final}, N_str: {N_str_final}")
+        
+        return M_str_final, N_str_final
+
+    except Exception as e:
+        print(f"[ERROR] Error in sympify during parse_differential_equation_from_full_string: {e}")
+        raise ValueError(f"No se pudo parsear la ecuación diferencial compleja: '{equation_str}'. Error: {e}")
+
 
 def clean_outer_parentheses(expr_str: str) -> str:
     """
