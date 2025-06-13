@@ -3,6 +3,7 @@ import sympy as sp
 from st_mathlive import mathfield
 import re
 import unicodedata
+from equation_solver import solve_exact_differential_equation # Importar la función desde equation_solver
 
 # Definir símbolos globalmente para SymPy
 x, y = sp.symbols('x y')
@@ -262,133 +263,6 @@ def safe_sympify(expr_str: str):
     except Exception as e:
         print(f"[ERROR] Error in sympify for '{expr_str}': {e}")
         raise ValueError(f"No se pudo convertir la expresión '{expr_str}' a SymPy: {e}")
-
-def solve_exact_differential_equation(M_str: str, N_str: str) -> list[str]:
-    """
-    Resuelve una ecuación diferencial exacta con manejo mejorado de errores.
-    """
-    results = []
-    try:
-        # Convertir strings a expresiones SymPy usando la función segura
-        M = safe_sympify(M_str)
-        N = safe_sympify(N_str)
-        
-        results.append("### 1. Ecuación diferencial original")
-        results.append(f"$({sp.latex(M)})\,dx + ({sp.latex(N)})\,dy = 0$")
-
-        results.append("### 2. Derivadas parciales y verificación de exactitud")
-        dM_dy = sp.diff(M, y)
-        dN_dx = sp.diff(N, x)
-        results.append(f"$\\frac{{\\partial M}}{{\\partial y}} = {sp.latex(dM_dy)}$")
-        results.append(f"$\\frac{{\\partial N}}{{\\partial x}} = {sp.latex(dN_dx)}$")
-        
-        if sp.simplify(dM_dy - dN_dx) == 0:
-            results.append("✅ La ecuación es exacta.")
-            results.append("### 3. Solución general de la ecuación exacta")
-            
-            # Integrar M con respecto a x
-            Fx_y = sp.integrate(M, x)
-            results.append(f"Integramos $M(x,y)$ con respecto a $x$: $F(x,y) = \\int M(x,y) dx = {sp.latex(Fx_y)} + g(y)$")
-            
-            # Derivar F(x,y) parcialmente con respecto a y y comparar con N(x,y)
-            dF_dy = sp.diff(Fx_y, y)
-            
-            # Calcular g'(y)
-            g_prime_y_expr = sp.simplify(N - dF_dy)
-            
-            results.append(f"Comparamos con $N(x,y)$: $g'(y) = N(x,y) - \\frac{{\\partial F}}{{\\partial y}} = {sp.latex(N)} - ({sp.latex(dF_dy)}) = {sp.latex(g_prime_y_expr)}$")
-            
-            # Verificar si g_prime_y_expr contiene 'x'
-            if g_prime_y_expr.free_symbols and x in g_prime_y_expr.free_symbols:
-                results.append(f"**Advertencia**: $g'(y)$ aún contiene $x$: ${sp.latex(g_prime_y_expr)}$")
-
-            # Integrar g'(y) para encontrar g(y)
-            g_y = sp.integrate(g_prime_y_expr, y)
-            results.append(f"Integramos $g'(y)$ con respecto a $y$: $g(y) = \\int g'(y) dy = {sp.latex(g_y)}$")
-            
-            # Solución general
-            general_solution = sp.simplify(Fx_y + g_y)
-            results.append(f"La solución general es $F(x,y) = C$: ${sp.latex(general_solution)} = C$")
-
-        else:
-            results.append("❌ La ecuación NO es exacta.")
-            results.append("### 3. Búsqueda de factor integrante")
-            
-            mu_found = False
-
-            # Caso 1: Factor integrante función de x
-            try:
-                if N != 0:
-                    p_x_candidate = sp.simplify((dM_dy - dN_dx) / N)
-                    if p_x_candidate.free_symbols <= {x}:
-                        mu = sp.exp(sp.integrate(p_x_candidate, x))
-                        results.append(f"**Caso 1:** Factor integrante dependiente de x: $\\mu(x) = {sp.latex(mu)}$")
-                        mu_found = True
-                        
-                        # Aplicar el factor integrante y resolver
-                        M_new = sp.simplify(mu * M)
-                        N_new = sp.simplify(mu * N)
-                        
-                        results.append("### 4. Ecuación multiplicada por el factor integrante")
-                        results.append(f"${sp.latex(M_new)}\,dx + {sp.latex(N_new)}\\,dy = 0$")
-                        
-                        # Continuar con la solución...
-                        dM_new_dy = sp.diff(M_new, y)
-                        dN_new_dx = sp.diff(N_new, x)
-                        
-                        if sp.simplify(dM_new_dy - dN_new_dx) == 0:
-                            results.append("✅ La nueva ecuación ES exacta.")
-                            
-                            F_new_x_y = sp.integrate(M_new, x)
-                            dF_new_dy = sp.diff(F_new_x_y, y)
-                            h_prime_y_expr = sp.simplify(N_new - dF_new_dy)
-                            h_y = sp.integrate(h_prime_y_expr, y)
-                            general_solution_new = sp.simplify(F_new_x_y + h_y)
-                            results.append(f"**Solución general**: ${sp.latex(general_solution_new)} = C$")
-            except Exception as e:
-                results.append(f"Error en factor integrante de x: {e}")
-            
-            # Caso 2: Factor integrante función de y
-            if not mu_found:
-                try:
-                    if M != 0:
-                        p_y_candidate = sp.simplify((dN_dx - dM_dy) / M)
-                        if p_y_candidate.free_symbols <= {y}:
-                            mu = sp.exp(sp.integrate(p_y_candidate, y))
-                            results.append(f"**Caso 2:** Factor integrante dependiente de y: $\\mu(y) = {sp.latex(mu)}$")
-                            mu_found = True
-                            
-                            # Similar proceso para factor integrante de y...
-                            M_new = sp.simplify(mu * M)
-                            N_new = sp.simplify(mu * N)
-                            
-                            results.append("### 4. Ecuación multiplicada por el factor integrante")
-                            results.append(f"${sp.latex(M_new)}\,dx + {sp.latex(N_new)}\\,dy = 0$")
-                            
-                            dM_new_dy = sp.diff(M_new, y)
-                            dN_new_dx = sp.diff(N_new, x)
-                            
-                            if sp.simplify(dM_new_dy - dN_new_dx) == 0:
-                                results.append("✅ La nueva ecuación ES exacta.")
-                                
-                                F_new_x_y = sp.integrate(M_new, x)
-                                dF_new_dy = sp.diff(F_new_x_y, y)
-                                h_prime_y_expr = sp.simplify(N_new - dF_new_dy)
-                                h_y = sp.integrate(h_prime_y_expr, y)
-                                general_solution_new = sp.simplify(F_new_x_y + h_y)
-                                results.append(f"**Solución general**: ${sp.latex(general_solution_new)} = C$")
-                except Exception as e:
-                    results.append(f"Error en factor integrante de y: {e}")
-
-            if not mu_found:
-                results.append("⚠️ No se pudo encontrar un factor integrante simple.")
-                
-    except Exception as e:
-        results.append(f"**Error**: {str(e)}")
-        import traceback
-        results.append(f"**Traceback**: {traceback.format_exc()}")
-    
-    return results
 
 # Código Streamlit
 st.title("Análisis de Ecuaciones Diferenciales Exactas y Factores Integrantes")
