@@ -8,6 +8,7 @@ def parsear_edo(entrada: str):
     from sympy import symbols, sympify, diff, simplify
     from dev.signos_multiplicacion import signos_multiplicacion
     from dev.normalizar_coeficiente import normalizar_coeficiente
+    from dev.simplificar_general import simplificar_general
 
     x, y = symbols('x y')
     print("----------------------------------------------------")
@@ -15,6 +16,11 @@ def parsear_edo(entrada: str):
 
     entrada = entrada.strip()
     print("[DEBUG] Entrada sin espacios extremos:", entrada)
+
+    # Aplicar simplificación general si la ecuación es = 0
+    if entrada.endswith('= 0') or entrada.endswith('=0'):
+        entrada = simplificar_general(entrada)
+        print(f"[DEBUG] Ecuación simplificada general: '{entrada}'")
 
     entrada = entrada.replace('^', '**')
     print("[DEBUG] Entrada con potencias normalizadas (^ → **):", entrada)
