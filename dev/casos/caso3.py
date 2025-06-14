@@ -54,12 +54,14 @@ def caso3(M, N, x, y, max_exponente=3):
                     
                     # Calcular el factor integrante
                     factor_integrante = x**m_val * y**n_val
+                    print("✅✅✅✅✅✅✅✅✅✅")
                     print(f"Factor integrante μ(x,y) = x^{m_val} * y^{n_val} = {factor_integrante}")
                     
                     # Multiplicar M y N por el factor integrante
                     M_nueva = simplify(factor_integrante * M)
                     N_nueva = simplify(factor_integrante * N)
                     
+                    print("✅✅✅✅✅✅✅✅✅✅")
                     print(f"Nueva M = μ(x,y) × M = {M_nueva}")
                     print(f"Nueva N = μ(x,y) × N = {N_nueva}")
                     
@@ -125,6 +127,7 @@ def caso3_algebraico(M, N, x, y):
                         N_nueva = simplify(factor_integrante * N)
                         
                         if exacta(M_nueva, N_nueva, x, y):
+                            print("✅✅✅✅✅✅✅✅✅✅")
                             print(f"Factor integrante encontrado: μ(x,y) = {factor_integrante}")
                             return factor_integrante, True
         

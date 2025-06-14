@@ -32,7 +32,8 @@ def exacta(M, N, x=None, y=None):
     # 👇 Derivadas parciales
     dM_dy = diff(M, y)
     dN_dx = diff(N, x)
-
+    
+    print("✅✅✅✅✅✅✅✅✅✅")
     print(f"[DEBUG] ∂M/∂y = {dM_dy}")
     print(f"[DEBUG] ∂N/∂x = {dN_dx}")
     diferencia = dM_dy - dN_dx

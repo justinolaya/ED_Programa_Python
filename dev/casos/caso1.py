@@ -46,12 +46,13 @@ def caso1(M, N, x, y):
         factor_integrante = simplify(factor_integrante)
         
         print(f"∫p(x)dx = {integral_p}")
+        print("✅✅✅✅✅✅✅✅✅✅")
         print(f"Factor integrante μ(x) = e^∫p(x)dx = {factor_integrante}")
         
         # Multiplicar M y N por el factor integrante
         M_nueva = simplify(factor_integrante * M)
         N_nueva = simplify(factor_integrante * N)
-        
+        print("✅✅✅✅✅✅✅✅✅✅")
         print(f"Nueva M = μ(x) × M = {M_nueva}")
         print(f"Nueva N = μ(x) × N = {N_nueva}")
         

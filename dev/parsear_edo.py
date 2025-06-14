@@ -12,6 +12,7 @@ def parsear_edo(entrada: str):
 
     x, y = symbols('x y')
     print("----------------------------------------------------")
+    print("✅✅✅✅✅✅✅✅✅✅")
     print("[DEBUG] Entrada original:", entrada)
 
     entrada = entrada.strip()
