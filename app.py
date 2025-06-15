@@ -3,7 +3,7 @@ import sympy as sp
 from st_mathlive import mathfield
 import re
 import unicodedata
-from equation_solver import solve_exact_differential_equation
+from equation_solver import find_integrating_factor  # Cambiado a la nueva función
 
 # Definir símbolos globalmente para SymPy
 x, y = sp.symbols('x y')
@@ -218,33 +218,25 @@ def display_results(results: list):
         display_result_line(line)
 
 def process_equation(full_equation_latex_input: str):
-    """Procesa la ecuación ingresada y muestra los resultados."""
+    """Procesa la ecuación ingresada y muestra el factor integrante si existe."""
     try:
-        st.write("**Debug Info:**")
-        st.write(f"Input LaTeX: {full_equation_latex_input}")
-        
         # Convertir LaTeX a SymPy
         full_equation_str_processed = latex_to_sympy(full_equation_latex_input)
-        st.write(f"Procesado por latex_to_sympy: `{full_equation_str_processed}`")
         
         # Parsear la ecuación
         M_str_parsed, N_str_parsed = parse_differential_equation_from_full_string(full_equation_str_processed)
-        st.write(f"M parseado: `{M_str_parsed}`")
-        st.write(f"N parseado: `{N_str_parsed}`")
         
-        # Resolver la ecuación
-        results = solve_exact_differential_equation(M_str_parsed, N_str_parsed)
+        # Buscar el factor integrante
+        results = find_integrating_factor(M_str_parsed, N_str_parsed)
         
         st.markdown("---")
-        st.markdown("## Solución:")
+        st.markdown("## Factor Integrante:")
         display_results(results)
             
     except ValueError as ve:
         st.error(f"Error de formato: {str(ve)}")
     except Exception as e:
         st.error(f"Error inesperado: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
 
 def main():
     """Función principal de la aplicación."""
